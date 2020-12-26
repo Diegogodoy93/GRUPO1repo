@@ -105,61 +105,6 @@ const calcDistance = (lat1, lon1, lat2, lon2) => {
 
 
 ///////////////////////ENDPOINTS///////////////////////
-////////TIENES QUE HACER QUE LA CONTRASEÑA QUE ENTRE DENTRO DEL SERVIDOR ESTÉ ENCRIPTADA ADEMÁS DE CORREGIR ESTE ENDPOINT//////////////
-/////// REGISTER END POINT/////////  (SE PUEDEN HACER AMBAS BÚSQUEDAS DENTRO DE LA BASE DE DATOS EN UNA QUERY)
-// server.post("/register", (req, res) => {
-
-// 	let newUser = req.body;
-
-
-// 	if (newUser.name && newUser.familyName && newUser.email && newUser.userName && newUser.password) {
-
-// 		connection.query(`SELECT * FROM users WHERE Email = ?;`,[newUser.email], function (err, result) {
-
-// 			if (err) {
-
-// 				console.log(err);
-// 				return;
-
-// 			}
-
-// 			if (!result.length) {
-
-// 				connection.query(`SELECT * FROM users WHERE user_name = ?;`,[newUser.userName], function (err, result) {
-
-// 					if(err){
-// 						console.log(err);
-// 						return;
-// 					}
-
-// 					if (!result.length) {
-					
-// 						connection.query(`INSERT INTO users (tel, created_at, user_name, Email, Password, apicultor) VALUES (${newUser.tel},${new Date()},${newUser.user_name},${newUser.Email},${newUser.password}, ${newUser.apicultor});`)
-// 						const Payload = {
-
-// 							"userName": newUser.user_name,
-// 							"iat": new Date(),
-// 							"role": "User",
-// 							"ip": req.connection.remoteAddress
-// 						};
-// 						connection.end();
-// 						return res.cookie("jwt", generateJWT(Payload), options).send({"msg": "New user has been created."}); //"sessionCookie", "digimonCookie", options).send(generateJWT(Payload))
-// 					} else {res.send("User name or Email already exists")}
-// 				})
-// 			}
-
-// 		});
-
-// 	} else	{
-// 		connection.end();
-// 		res.send("User name or Email already exists")
-// 	}
-
-
-// });
-
-
-
 
 
 
@@ -170,36 +115,24 @@ server.post("/register", (req, res) => {
 	let newUser = req.body;
 
 
-	if (newUser.name && newUser.familyName && newUser.email && newUser.userName && newUser.password && newUser.name && newUser.familyName && validateCredentials(newUser.Email, newUser.password)) {
+	if (newUser.email && newUser.password && validateCredentials(newUser.Email, newUser.password)) {
 
 		connection.query(`SELECT * FROM users WHERE Email = ? OR user_name = ?;`,[newUser.email, newUser.userName], function (err, result) {
 
 			if (err) {
 
-				console.log(err);
-				return;
+				res.send({"res" : "0", "msg" : err});
+				
 
 			}
 
-			
+			//tenemos que obtener en el formApic los siguientes datos: booleanApic: (si es positivo tenemos que meter el código de ganadero su tipo de org), family_name, tel.
 
 				if (!result.length) {
 
-					let encryptedPass = JWT.encryptPassword(newUser.password);
-
-					connection.query(`INSERT INTO users (tel, created_at, user_name, name, family_name, Email, Passw, SALT, apicultor) VALUES (${newUser.tel},${new Date()},${newUser.user_name}, ${newUser.name}, ${newUser.familyName}, ${newUser.Email},${encryptedPass.password}, ${encryptedPass.salt},  ${newUser.apicultor});`)
-					
-					const Payload = {
-
-						"userName": newUser.user_name,
-						"iat": new Date(),
-						"role": "User",
-						"ip": req.connection.remoteAddress
-					};
-
-					connection.end();
-					return res.cookie("jwt", JWT.generateJWT(Payload), options).send({"msg": "New user has been created."}); //"sessionCookie", "digimonCookie", options).send(generateJWT(Payload))
-			} else {res.send("User name or Email already exists")} 
+				res.send({"res" : "2", "msg" : "User to formApic", newUser});
+			} 
+			else {res.send({"res" : "1", "msg" : "User or email already in DB"})};
 		})
 			
 
@@ -207,35 +140,33 @@ server.post("/register", (req, res) => {
 
 	} else	{
 		connection.end();
-		res.send("Format error")
+		res.send({"res" : "0", "msg" : "Format error in credentials"});
 	}
 
 
 });
 
 
+
+
 //////  LOGIN ENDPOINT ESTÁ CORREGIDO FALTA COMPROBACIÓN //////////
 
 server.post("/login", (req, res) => {
 
+	
+	
+	
 	const {userName, password} = req.body; //VARIABLE QUE CONTIENE EL JSON LOS DATOS ENCRIPTADOS DEL FRONT.
 	
-	let JWT = req.cookies.jwt;
 
-	if (JWT) {
-        //If the JWT was verified, I sent them the info, if not, clear the cookie
-        if (JWT.verifyJWT(JWT))
-            res.send(JWT.getJWTInfo(JWT));
-        else {
-            res.clearCookie("jwt");
-            res.send({ msg: "invalid session" });
-        }
-    } else {
+		const Validated = validateCredentials(userName, password);
+    
 		//////////AQUÍ TENDRÍA QUE IR LA PARTE DE VERIFY PASSWORD O PODEMOS HACERLO CON BCRYPT => LINEA 123 DE https://github.com/TheBridge-FullStackDeveloper/ft-sep20-Backend-examples/blob/main/jwt/server.js////////////
-		if (userName && password){
+		if (userName && password && Validated){
 
-
-		connection.query(sqlFn.querySQL("users", "user_name", `${userName}`), function (err, result) {
+		const sql = `SELECT * from users U INNER JOIN coolmenaUsers CU ON U.id = CU.id_users WHERE user_name =?;`
+		
+		connection.query(sql,[userName], function (err, result) {
 
 			
 			
@@ -245,32 +176,175 @@ server.post("/login", (req, res) => {
 				return;
 			}
 
-			let queryResult = result[0];
-			
-			let realPassword = {
-				password : queryResult.passw,
-				salt : queryResult.salt
+			let realPsw = {
+
+				password: result[0].password,
+				salt: result[0].salt 
 			}
-
-			if (verifyPassword(queryResult.password, realPassword)) { //El password que queremos comprobar es el queryResult.password
-
+			
+			
+			//Aquí se tiene que comparar el psw en DB con la contraseña salted que nos llega 
+			if (verifyPassword( password,realPsw)) { //El password que queremos comprobar es el queryResult.password
+				
+					
 				const Payload = {
 
+					// "userName": userName,
+					// "iat": new Date(),
+					// "role": "User",
+					// "ip": req.connection.remoteAddress
+					"userId" : result[0].id,
 					"userName": userName,
-					"iat": new Date(),
-					"role": "User",
-					"ip": req.connection.remoteAddress
+					"email" : email,
+					"name" : name,
+					"iat" : new Date()
 				};
-				res.cookie("jwt", JWT.generateJWT(Payload), options).send({"msg": Payload}); 
+
+				res.cookie("jwt", JWT.generateJWT(Payload),{"httpOnly" : true}).send({"res": "2", "msg": Payload}); 
+				
+				
 			}  else {
-				res.send("Wrong user or password");
+				res.send({"res": "0", "msg": "Wrong user or password"});
 			}
 
 			connection.end();
 		});
-	}}
+	} else {res.send({"res" : "0", "msg": "Wrong format"});}
 
 
+});
+
+server.post("/formApic", (req, res) => {
+	//Variables para la primera query a SQL
+	const sql;
+	const arrayVariables;
+
+	if(req.body){
+		
+		//Apic será null si el usuario ha puesto que no es apicultor o será un objeto que contendrá tanto numRegGanadero como tipoOrg 
+		const {idGoogle, idFacebook, name, familyName, email, password, apic} = req.body;
+		//Para ahorrar recursos de la base de datos. Refactorizar
+		if(apic){
+			sql = `INSERT INTO users (created_at, name, family_name, Email, apicultor) VALUES (?,?,?,?,?);`;
+			arrayVariables = [new Date(),name, familyName, email, newUser.Email, 1]
+
+		} else {
+			sql = `INSERT INTO users (created_at, name, family_name, Email) VALUES (?,?,?,?);`
+			arrayVariables =[new Date(),name, familyName, email, newUser.Email]
+		}
+
+		//HAY QUE PONER DE DEFAULT NULL EN TODO LO QUE METEMOS EN USERS
+		
+
+		connection.query(sql, arrayVariables, (err, result) => {
+
+			const idUser = result.insertId;
+
+			if(err) {
+				res.send({"res" : "0", "msg" : err});
+			}
+
+			if (apic) {
+
+				
+				const sql = `INSERT INTO apicultores (id_users, num_reg_ganadero, tipo_org) VALUES (?,?,?)`
+
+				connection.query(sql, [idUser, apic.numRegistroGanadero, apic.tipoOrg], (err, result) => {
+					
+					if(err) {
+						res.send({"res" : "0", "msg" : err});
+					}
+					
+
+				})
+
+			}
+
+			const Payload = {
+				"userId" : idResultInsert,
+				"email" : email,
+				"name" : name,
+				"iat" : new Date()
+			};
+			//PUSH INFO PARA LOS USUARIOS DE REGISTRADOS DESDE NUESTRA APP
+			if (password) {
+
+				const Validated = validateCredentials(email, password)
+				if(Validated){
+
+					let pswObject = JWT.encryptPassword(password);
+
+					const sql = `INSERT INTO coolmenaUsers (id_users, passw, SALT) VALUES (?,?,?)`;
+
+					
+					
+					
+					connection.query(sql, [idResultInsert, pswObject.password, pswObject.salt], (err, result) => {
+
+						if(err) {
+							res.send({"res" : "0", "msg" : err});
+						}
+
+						
+						connection.end();
+
+						res.cookie("jwt", JWT.generateJWT(Payload),{"httpOnly" : true}).send({"res": "2", "msg": Payload});
+
+
+					})
+
+				} else {
+					res.send({"res":"0", "msg": "Wrong format"})
+				}
+				//PUSH INFO PARA LOS DE GOOGLE
+			} else if (idGoogle) {
+
+				const sql = `INSERT INTO googleUsers (id_users, id_google) VALUES (?,?)`
+				
+				connection.query(sql, [idResultInsert, idGoogle], (err, result)=> {
+					
+					if(err) {
+						res.send({"res" : "0", "msg" : err});
+					}
+
+					connection.end();
+
+					res.cookie("jwt", JWT.generateJWT(Payload),{"httpOnly" : true}).send({"res": "2", "msg": Payload});
+					
+				})
+				//PUSH INFO PARA LOS DE FACEBOOK 
+			} else if (idFacebook) {
+
+				const sql = `INSERT INTO facebookUsers (id_users, id_facebook) VALUES (?,?)`
+				
+				connection.query(sql, [idResultInsert, idFacebook], (err, result)=> {
+					
+					if(err) {
+						res.send({"res" : "0", "msg" : err});
+					}
+
+					connection.end();
+
+					res.cookie("jwt", JWT.generateJWT(Payload),{"httpOnly" : true}).send({"res": "2", "msg": Payload});
+					
+				})
+			} else {
+				res.send({"res" : "0", "msg" : "No data"})
+			}
+			
+			connection.end();
+		})
+		
+	} else res.send({"res" : "0", "msg": "No body"});
+	
+
+});
+
+
+
+server.get("/facebook-redirect", (req,res) =>{
+
+    res.redirect(facebook.getRedirectUrl());
 });
 
 
@@ -308,7 +382,7 @@ server.get("/facebook-login", async (req, res) => {
 
                                 //Generate JWT
                                 const Payload = {
-                                    "id_facebook" : result[0].id_facebook,
+                                    "userId" : result[0].id,
                                     "name" : result[0].name,
                                     "email" : result[0].email,
                                     "iat" : new Date()
@@ -322,17 +396,20 @@ server.get("/facebook-login", async (req, res) => {
                                 if(jwtVerified){
 
                                     //Access as administrator
-                                res.cookie("JWT", jwt, {"httpOnly" : true})
-                                    .send({"res" : "1", "msg" : `${result[0].name} has been found in usersFacebook and logged in with facebook`});
+                                	res.cookie("JWT", jwt, {"httpOnly" : true})
+                                    	.send({"res" : "1", "msg" : `${result[0].name} has been found in usersFacebook and logged in with facebook`});
 
                                 } else {
+
+									//posiblemente aquí queremos además borrar el jwt que tiene el front
                                     res.send({"res" : "0", "msg" : "JWT not verified"})
-                                }
+                                }		
                                 
                             
                         } else {
-
-                            res.send({"res" : "2", "msg" : "User facebook to fill form", data});
+							//Aquí se tiene que mandar la respuesta que requiera front si necesitamos mas datos de los que nos da facebook
+							//mandamos además el objeto obtenido del oAuth para que se vuelva a mandar al end-point formApic
+                            res.send({"res" : "2", "msg" : "User facebook to fill formApic", data});
 
                         }
                         connection.end();
@@ -353,78 +430,88 @@ server.get("/facebook-login", async (req, res) => {
 
 
 
+server.get("/google-redirect", (req, res) => {
+	res.redirect(Google.getGoogleAuthURL());
+});
 
 server.get("/google-login", async (req, res) => {
 
-	const {code} = req.query;
+    const {code} = req.query;
+    
 	if (code) {
+        const userData = await Google.getGoogleUser(code);
 
-		if(userData){
+        if(userData){
+            // res.send(userData);
+            const {id, email, name} = userData;
+            const Validated = validateEmail(email);
 
-		
-		
-		const userData = await Google.getGoogleUser(code);
-	
-		const {id, email, name} = userData;
+            if(Validated){
+                const DBconnection = sqlFn.connectionDB();
+                if (DBconnection){
+                    const prom = new Promise((resolve, reject) => {
+                        DBconnection.connect(err => {
+                            if (err) {
+                                reject(err);
+                            }
+                            resolve();
+                        });
+                    });
+                    prom.then(() => {
+                       
+                        const sql = "SELECT * FROM users U INNER JOIN googleUsers GU ON GU.google_id = U.id WHERE email = ?";
+                        DBconnection.query(sql, [email], (err, result) => {
 
-		const Validated = validateEmail(email);
-		
-		if(Validated) {
+                            if (err){
+                                res.send({"res" : "0", "msg" : err})
+                            } else if (result.length){
 
-			connection.query("SELECT * FROM users U INNER JOIN googleUsers GU ON GU.id_google = U.id WHERE Email = ?;",[email], (err, result) => {
 
-				if(err){
-											
-					console.log(err);
-					//Mensaje que devolveremos a front siempre que haya un error con conexión a base de datos.
-					res.send({"res" : "0", "msg" : err}); 
-				} 
+                                //Generate JWT
+                                const Payload = {
+                                    "userId" : result[0].id,
+                                    "name" : result[0].name,
+                                    "email" : result[0].email,
+                                    "iat" : new Date()
+                                };
 
-				else if (result.length){
+                                const jwt = JWT.generateJWT(Payload);
+                                const jwtVerified = JWT.verifyJWT(jwt);
 
-					 //Generate JWT
-					 const Payload = {
-						"id_google" : result[0].id_google,
-						"name" : result[0].name,
-						"email" : result[0].email,
-						"iat" : new Date()
-					};
+                                if(jwtVerified){
 
-					const jwt = JWT.generateJWT(Payload);
-					const jwtVerified = JWT.verifyJWT(jwt);
+                                    
+                                    res.cookie("JWT", jwt, {"httpOnly" : true})
+                                        .send({"res" : "1", "msg" : `${result[0].name} has been found in DB and logged in with google`});
 
-					if(jwtVerified) {
-						
-						res.cookie("JWT", jwt, {"httpOnly" : true})
-							.send({"res" : "1", "msg" : `${result[0].name} has been found in DB and logged in with google`});
-							
-					} 
-				} else {
+                                } else {
+									//Aquí posiblemente borremos el JWT que tiene front 
+                                    res.send({"res" : "0", "msg" : "JWT not verified"})
+                                }
+                                    
+                            } else {
 
-					res.send({"res" : "2", "msg" : "User Google to fill form", userData})
-				}
-				connection.end();
-
-			}).catch((e) => {
+								//respuesta que damos a front para que mande al usuario al end-point del form completo.
+                                res.send({"res" : "2", "msg" : "User Google to fill form", userData})
+                            }
+                            DBconnection.end();
+                        });
+                    })
+                    .catch((e) => {
                         
-				res.send({"res" : "0", "msg" : "Unable to connect to database", e});
-			});
-			
-		}	else {
-						
-			res.send({"res" : "0", "msg" : "JWT not verified"})
-				.clearCookie(JWT);	}					
-		
-		
-	} else {
-		res.send({"res" : "0", "msg" : "No userData"});
-	}	
+                        res.send({"res" : "0", "msg" : "Unable to connect to database", e});
+                    });
+                }
+            }
+
+        } else {
+            res.send({"res" : "0", "msg" : "No userData"});
+        }
 
 	} else {
         res.send({"res" : "0", "msg" : "No code"})
     }
-})
-
+});
 
 
 
@@ -454,23 +541,47 @@ server.get("/logout", (req, res) =>{
 ////////////////////////////
 
 ////////////////OBTENCIÓN DE TODOS LOS PRODUCTOS ---CARTA3/3A/3D--- ///////////////////
-///////////////ESTE ENDPOINT PROBABLEMENTE NO SE UTILICE PUESTO QUE SE SUPONE QUE LOS FILTROS OCURREN EN BACK//////////
+///////////////ENDPOINT PARA ORDENACIÓN DE PRODUCTOS DEPENDIENDO DE LA DISTANCIA CON RESPECTO A LA POSICIÓN DEL USUARIO//////////
 server.get("/products", (req, res) => {  //Puede que haya que cambiar este endpoint puesto que necesitamos también long/lat
 
-
 	
-	connection.query(`SELECT * FROM products;`, function (err, result) {
 
-		if (err) {
 
-			console.log(err);
-			return;
+		connection.query(`SELECT * FROM products;`, function (err, result) {
+
+		const orderedProductList = [];
+		const unOrderedProductList = result;
+		const userPosition = req.body.position; //Front mandará un objeto compuesto de lat y lon 
+			
+		if (err){
+			res.send({"res" : "0", "msg" : err})
 		}
 
-		connection.end();
-		res.send(result);
+		if(userPosition){
+				
+			result.map((elemento) => {
 
+				let formatedCoord = elemento.long_lat.split(",");
+				let productLat = formatedCoord[0] * 1;
+				let productLon = formatedCoord[1] * 1;
+	
+				if (calcDistance(userPosition.lat, userPosition.lon, productLat, productLon) <= 10000) {
+					
+					orderedProductList.push(elemento);
+				}	
+			})
+
+
+			connection.end();
+			res.send({"res": "2", "msg": {orderedProductList,unOrderedProductList}});
+		} else {
+				
+			connection.end();
+			res.send({"res": "1", "msg": unOrderedProductList})
+		}
 	})
+
+	 	
 })
 
 /////////////OBTENCIÓN DE PRODUCTOS DE UN ID_USUARIO EN PARTICULAR (DE UN USUARIO APICULTOR) ---CARTA 2D/2A---  /////////////////
@@ -481,112 +592,130 @@ server.get("/productsByUserId/:ID", (req, res) => {
 
 	connection.query(`SELECT * FROM products WHERE id_users = ?;`,[userID], (err, result) => {
 
-		if (err) {
-
-			console.log(err);
-			return;
+		if (err){
+			res.send({"res" : "0", "msg" : err})
 		}
 
 		connection.end();
-		res.send(result);
-
+		res.send({"res": "2", "msg": result});
 		
 	})
 })
 
 
-/////////OBTENCIÓN DE PUNTOS DE VENTA PARA POSTERIOR ORDENACIÓN  ---CARTA2--- ////////////////
+/////////OBTENCIÓN DE PUNTOS DE VENTA PARA POSTERIOR ORDENACIÓN  LINEA VERDE Y NARANJA (CENTRO)  ////////////////
 server.get("/sellingPoints", (req, res) => {
+	
+	const orderedList = [];
+	const unOrderedList = result;
+	const userPosition = req.body.position; //Front enviará un objeto con las llaves lat y lon (como en el endpoint de arriba)
+	const sql = `SELECT * FROM products_selling_points;`
+	
+	connection.query(sql, (err, result) => {
 
-
-		
-	connection.query("SELECT * FROM products_selling_points;", function (err, result) {
-
-		if (err) {
-
-			console.log(err);
-			return;
+		if (err){
+			res.send({"res" : "0", "msg" : err})
 		}
+		if(userPosition){
+				
+			result.map((elemento) => {
 
-		connection.end();
-		res.send(result);
+				let formatedCoord = elemento.long_lat.split(",");
+				let Lat = formatedCoord[0] * 1;
+				let Lon = formatedCoord[1] * 1;
+	
+				if (calcDistance(userPosition.lat, userPosition.lon, Lat, Lon) <= 10000) {
+					
+					orderedProductList.push(elemento);
+				}	
+			})
+
+
+			connection.end();
+			res.send({"res": "2", "msg": {orderedList,unOrderedList}});
+		} else {
+				
+			connection.end();
+			res.send({"res": "1", "msg": unOrderedList})
+		}
 
 	})
+	
 })
 
 
-server.get("/sellingPoints/:userLat/:userLon", (req, res) => {
+// server.get("/sellingPoints/:userLat/:userLon", (req, res) => {
 
-	connection.query("SELECT * FROM products_selling_points;", function (err, result) {
-		///////////////////RECIBIMOS TANTO COORDENADAS COMO ID DE APICULTOR, POSIBLEMENTE UTILICEMOS ESTO PARA MOSTRAR ALGO DE INFO EN CADA UNO DE LOS PUNTOS QUE APARECEN DENTRO DEL MAPA/////////////////
-		/////////////////EN LA BASE DE DATOS LOS DATOS DE COORDENADAS VIENEN EN FORMATO: "40.421562099999996,-3.6927109999999996"  POR EJEMPLO, SIEMPRE CON EN ORDEN LAT,LONG Y EN FORMA DE STRING /////////////
-		if (err) {
+// 	connection.query("SELECT * FROM products_selling_points;", function (err, result) {
+// 		///////////////////RECIBIMOS TANTO COORDENADAS COMO ID DE APICULTOR, POSIBLEMENTE UTILICEMOS ESTO PARA MOSTRAR ALGO DE INFO EN CADA UNO DE LOS PUNTOS QUE APARECEN DENTRO DEL MAPA/////////////////
+// 		/////////////////EN LA BASE DE DATOS LOS DATOS DE COORDENADAS VIENEN EN FORMATO: "40.421562099999996,-3.6927109999999996"  POR EJEMPLO, SIEMPRE CON EN ORDEN LAT,LONG Y EN FORMA DE STRING /////////////
+// 		if (err) {
 
-			console.log(err);
-			return;
-		}
+// 			console.log(err);
+// 			return;
+// 		}
 
-		/////////////////////funcion coordenadas ////////////////
-		let userLat = req.params.userLat * 1;
-		let userLon = req.params.userLon * 1;
-		let sellingPoints = result;
-		let arrayUsersInRange = [];
+// 		/////////////////////funcion coordenadas ////////////////
+// 		let userLat = req.params.userLat * 1;
+// 		let userLon = req.params.userLon * 1;
+// 		let sellingPoints = result;
+// 		let arrayUsersInRange = [];
 
 		
-		sellingPoints.map((elemento, idx) => {
+// 		sellingPoints.map((elemento) => {
 
-			let formatedCoord = elemento.long_lat.split(",");
-			let apicLat = formatedCoord[0] * 1;
-			let apicLon = formatedCoord[1] * 1;
+// 			let formatedCoord = elemento.long_lat.split(",");
+// 			let apicLat = formatedCoord[0] * 1;
+// 			let apicLon = formatedCoord[1] * 1;
 
-			if (calcDistance(userLat, userLon, apicLat, apicLon) <= 5000) {
+// 			if (calcDistance(userLat, userLon, apicLat, apicLon) <= 5000) {
 
-				arrayUsersInRange.push(elemento);
-			}
+// 				arrayUsersInRange.push(elemento);
+// 			}
 
 
 
-		})
-		connection.end();
-		res.send(arrayUsersInRange);
+// 		})
+// 		connection.end();
+// 		res.send(arrayUsersInRange);
 
-	})	
-})
+// 	})	
+// })
 
 
 
 
 //ENDPOINT id- APICULTORES JUNTO CON SU LONG/LAT (users_selling_points)=> POR HACER ---CARTA2D ???? COMPRENDO QUE ESTO ES PARA LA CARTA2---
-server.get("/usersApicCoord", (req, res) => {
+// server.get("/usersApicCoord", (req, res) => {
 
-	connection.query("SELECT * FROM users_selling_points;", (err, result) => {
+// 	connection.query("SELECT * FROM users_selling_points;", (err, result) => {
 
-		if (err) {
-			console.log(err);
-			return;
+// 		if (err){
+// 			res.send({"res" : "0", "msg" : err})
+// 		}
 
-		}
+// 		connection.end();
+// 		res.send(result);
 
-		connection.end();
-		res.send(result);
+// 	})
+// })
 
-	})
-})
+
 //ENDPOINT DE INFORMACION DE APICULTOR JUNTO CON SU LONG/LAT (users_selling_points)=> POR HACER ---CARTA2D---	 HACEMOS UN JOIN PARA EVITAR TENER QUE HACER MÁS DE UNA QUERY, HACEMOS JOIN DE TABLA users y tabla users_selling_points a partir del users_id para obtener tanto la info del apicultor como sus coordenadas 
-				///////////////PROBAR///////////////END-POINT PARA PARTE MORADA/NEGRA DE ABAJO//////////////////																									//LA QUERY PRETENDE SACAR DE LA TABLA USERS TANTO EMAIL COMO FECHA DE CREACIÓN DEL USUARIO HACIENDO UN JOIN CON LA TABLA USERS_SELLING POINTS A PARTIR DE LAS COINCIDENCIA DE ID DONDE EL ID SEA = A LA QUERY
+//END-POINT PARA PARTE MORADA/NEGRA DE ABAJO//////////////////																									//LA QUERY PRETENDE SACAR DE LA TABLA USERS TANTO EMAIL COMO FECHA DE CREACIÓN DEL USUARIO HACIENDO UN JOIN CON LA TABLA USERS_SELLING POINTS A PARTIR DE LAS COINCIDENCIA DE ID DONDE EL ID SEA = A LA QUERY
+
 server.get("/usersApicInfoByID/:ID", (req, res) => {
+
 
 	let query = req.params.ID
 	connection.query(`SELECT users.user_name, products.id, products.product_name, products.product_type, products.picture, products.rating, selling_points.location FROM users JOIN apicultores ON users.id = apicultores.id_users JOIN products ON apicultores.id_apicultor = products.id_apicultor JOIN selling_points ON selling_points.id_apicultor = apicultores.id_apicultor WHERE users.id = ?`,[query], (err, result) => {
 
-		if (err) {
-			console.log(err);
-			return;
-
+		if (err){
+			res.send({"res" : "0", "msg" : err})
 		}
 
 		connection.end();
-		res.send(result);
+		res.send({"res": "1", "msg" :result});
 
 	})
 })
@@ -595,74 +724,88 @@ server.get("/usersApicInfoByID/:ID", (req, res) => {
 
 //ENDPOINT DE PRODUCTOS FAVORITOS DEL CONSUMIDOR/APICULTOR => SE OBTIENEN LOS PRODUCTOS FAVORITOS DEL USUARIO QUE LO ESTÁ UTILIZANDO---CARTA5/2D--- 
 
-server.get("/productsFav/:ID", (req, res) => {
+server.get("/productsFav", (req, res) => {
 
-	let query = req.params.ID;
+	const { usrid } = JWT.getJWTInfo(req.cookies.JWT)
 
-	connection.query(`SELECT * FROM users_products_fav WHERE id_users = ?;`, [query], (err, result) => {
+	if(usrid){
+		
+		
 
-		if(err){
-			
-			console.log(err);		
-		}
+		connection.query(`SELECT * FROM users_products_fav WHERE id_users = ?;`, [usrid], (err, result) => {
 
-		connection.end();
-		res.send(result);
-	})
+			if (err){
+				res.send({"res" : "0", "msg" : err})
+			}
+
+			connection.end();
+			res.send({"res" : "1", "msg": result});
+	
+		})
+	} else {res.send({"res": "0", "msg": "No JWT"})}
+	
 })
 
-
+ 
 
 /////////////////ENDPOINTS DEL CHAT//////////////////
-///////////////RECIBIR ID DE USUARIO/////////////////
+///////////////RECIBIR ID DE USUARIO//////////////////NO ESTOY SEGURO SI VAMOS A NECESITAR ESTE ENDPOINT/
 server.get("/getUserId/:userName", (req, res) => {
 
-	let userName = req.params.userName;
+	let userName = req.params.userName;  //POSIBLEMENTE METAMOS AQUÍ DISTINTOS PARAMS PARA OBTENER ID USER CON TODOS LOS PARAMS METIDOS <=
 	
 	connection.query(`SELECT id from users WHERE user_name =?;`, [userName], (err, result) => {
-
-		if(err){
-			console.log(err);
+		
+		if (err){
+			res.send({"res" : "0", "msg" : err})
 		}
 		
 		connection.end();
-		res.send(result[0].id)
+		res.send({"res": "1", "msg" : result[0].id})
 	})
 })
+
 ////////////////CORREGIDO FALTA COMPROBACIÓN///////////////////////
 ///////////////RECIBIR CONVERSACIÓN DE USUARIO CON OTRO USUARIO EN PARTICULAR////////////////////
-server.get("/getChat/:userId/:userId2", (req, res) => {
-
-	let userId = req.params.userId;
-	let userId2 = req.params.userId2;
+server.get("/getChat/:userId2", (req, res) => {
 
 	
+	const userId2 = req.params.userId2;
 
-	connection.query(`SELECT id_chats from chats_users WHERE id_users = ? OR id_users = ?;`, [userId, userId2], (err, result) => {
+	const { userId } = JWT.getJWTInfo(req.cookies.JWT);
+	
+	if (usrid && JWT.verifyJWT(req.cookies.JWT)) {	
 		
-		if (err){
-			console.log (err);
-		}
+		connection.query(`SELECT id_chats from chats_users WHERE id_users = ? OR id_users = ?;`, [userId, userId2], (err, result) => {
+		
+			if (err){
+				res.send({"res" : "0", "msg" : err})
+			}
 
 
-		let idArray = sqlFn.sqlArrayMap(result, "id_chats");
+			const idArray = sqlFn.sqlArrayMap(result, "id_chats");
 
 
-		let fireBaseQuery = findDuplicates(idArray);
+			let fireBaseQuery = sqlFn.findDuplicates(idArray);
 
-		dataBase.ref(`idChats/${fireBaseQuery}`).once("value", (snapshot) => {
-
-			let content = snapshot.val();
-			let messages = content.messages;
-			connection.end();
+			if(fireBaseQuery.length){
 			
-			res.send(JSON.stringify(messages));
+				dataBase.ref(`idChats/${fireBaseQuery[0]}`).once("value", (snapshot) => {
+
+					const content = snapshot.val();
+					const messages = content.messages;
+			
+					connection.end();
+					res.send({"res": "1", "msg" : messages});
+
+				})
+
+			} else {res.send({"res": "0", "msg": "No data found"})}
+
+		
 
 		})
-
-	})
-
-
+	} else {res.send({"res": "0", "msg": "No JWT"})}
 
 	
 })
@@ -670,115 +813,159 @@ server.get("/getChat/:userId/:userId2", (req, res) => {
 ///////////////INSERTAR NUEVO MENSAJE EN CHAT/////////////
 
 server.post("/newChatMessage", (req, res) => {
-	//recibimos JSON desde front un JSON con:  Id de usuario que hace el envío del mensaje como id del chat que existe con la persona a la que quiere enviar el mensaje
-	let idChat = req.body.chatId;
-	let idUser = req.body.userId;
-	let message = req.body.message
-	let timeNow = Date.now();
 	
-	let newMessage = {
-
-		time: timeNow 
+	const { userId } = JWT.getJWTInfo(req.cookies.JWT);
+	if (usrid && JWT.verifyJWT(req.cookies.JWT)) {
 		
-	}
+		//recibimos JSON desde front un JSON con:  Id de usuario que hace el envío del mensaje como id del chat que existe con la persona a la que quiere enviar el mensaje
+		let idChat = req.body.chatId;
+		let message = req.body.message;
+		let timeNow = Date.now();
+	
+		let newMessage = {
 
-	//creamos una nueva llave con el idUser dentro del objeto newMessage que es igual al mensaje que recibimos desde front 
-	newMessage[idUser] = message;
+			time: timeNow 
+		
+		}
 
-	dataBase.ref(`idChats/${idChat}/messages`).push(newMessage);
-	dataBase.ref(`idChats/${idChat}/lastActivity`.set(timeNow));
+	
+		//creamos una nueva llave con el idUser dentro del objeto newMessage que es igual al mensaje que recibimos desde front 
+		newMessage[userId] = message;
+
+		dataBase.ref(`idChats/${idChat}/messages`).push(newMessage);
+		dataBase.ref(`idChats/${idChat}/lastActivity`.set(timeNow));
 
 	 
 	
 	
-	connection.query(`INSERT INTO chats (id, created_at) VALUES (?, ?);`, [idChat, timeNow])
+		connection.query(`INSERT INTO chats (id, created_at) VALUES (?, ?);`, [idChat, timeNow], (err, result) => {
+
+			if (err){
+				res.send({"res" : "0", "msg" : err})
+			}
+
+			connection.end()
+		})
+
+	} else {res.send({"res": "0", "msg": "No JWT"})}
+
+
 
 })
 // SE PUEDE OBTIMIZAR Y HAY QUE COMPROBAR//////////////
 ///////////CREAR NUEVO CHAT///////////////////
 server.post("/newChat", (req, res) => {
 
+	const { userId } = JWT.getJWTInfo(req.cookies.JWT);
 	
-	let userId = req.body.userId;
-	let userId2 = req.body.userId2;
+	const userId2 = req.body.userId2;
 
-
-	connection.query("SELECT * FROM chats_users WHERE id_user = ?;", [userId], (err, result1) => {
-
-		//Flag que se activa si se encuentra una coincidencia de id_chats entre dos usuarios
-		let flag = false;	
-		//creamos un array con los id_chat a partir del array que hemos recibido
-		let arrayChatId1 = sqlFn.sqlArrayMap(result1, "id_chats");
-
-		if(err) {
-			console.log(err);
-		}
-		//si existen datos dentro del array recibido como parámetro:
-		if (result1.length){
-			connection.query("SELECT * FROM chats_users WHERE id_user = ?;", [userId2], (err, result2) => {
-
-				if(err) {
-					console.log(err);
-				}
-
-			
-			//creamos el segundo array con los id_chat recibidos de la segunda petición a SQL
-			let arrayChatId2 = sqlFn.sqlArrayMap(result2, "id_chats");
-			
-			//Por cada uno de los elementos dentro del primer array, verificamos si existe algún elemento dentro del segundo array que coincida
-			arrayChatId1.map((element) => {
-
-				arrayChatId2.map((element2) => {
-
-					if (element === element2) return flag = true;
-
-				})				 
-			})
-			
-
-			//como el flag no se ha levantado puesto que no se ha encontrado un id_Chats común => creamos nuevo objeto dentro de Firebase
-			if (!flag) {
-				
-				//objeto que se meterá dentro de FireBase y contendrá toda la información del chat entre dos usuarios
-				let timeNow = Date.now();
-				let randomId = `${Math.floor(Math.random() * 1000000000000)}`;  // Número random de 12 cifras que hará de id único en FireBase
-				let newChat = {
-					createdDate : timeNow,
-					usersInside : [`${userId}`, `${userId2}` ],
-					lastActivity : timeNow,
-					messages : {
-					   
-					}
-				}
-
-				 //Empujamos el nuevo objeto dentro de FireBase
-
-				dataBase.ref(`idChats/${randomId}`).set(newChat);
-				
-				
-				
-				
-				
-				//NO HAS HENDLED SI HAY ERRORES EN ESTAS QUERIES //
-				//Actualizamos todas las tablas de SQL que tienen que ser actualizadas
-				connection.query(`INSERT INTO chats_users (id_chats, id_users) VALUES (?, ?);`, [randomId, userId])
-				connection.query(`INSERT INTO chats_users (id_chats, id_users) VALUES (?, ?);`, [randomId, userId2])
-				connection.query(`INSERT INTO chats (id, created_at, last_activity) VALUES (?, ?, ?);`, [randomId, timeNow, timeNow])
-
-				connection.end();
-
-			} else {
-				connection.end();
-				res.send("There's already a Chat created between these users")
-			}
-
-			
-			
-			
-		})}
+	if(userId && userId2 && JWT.verifyJWT(req.cookies.JWT)) {
 		
+		connection.query("SELECT * FROM chats_users WHERE id_user = ?;", [userId], (err, result1) => {
+			
+			if (err){
+				res.send({"res" : "0", "msg" : err})
+			}
 	
-	})
+			//Flag que se activa si se encuentra una coincidencia de id_chats entre dos usuarios
+			let flag = false;	
+			//creamos un array con los id_chat a partir del array que hemos recibido
+			let arrayChatId1 = sqlFn.sqlArrayMap(result1, "id_chats");
+	
+			
+			
+			//si existen datos dentro del array recibido como parámetro:
+			if (result1.length){
+				connection.query("SELECT * FROM chats_users WHERE id_user = ?;", [userId2], (err, result2) => {
+	
+					if (err){
+						res.send({"res" : "0", "msg" : err})
+					}
+	
+				
+				//creamos el segundo array con los id_chat recibidos de la segunda petición a SQL
+				let arrayChatId2 = sqlFn.sqlArrayMap(result2, "id_chats");
+				
+				//Por cada uno de los elementos dentro del primer array, verificamos si existe algún elemento dentro del segundo array que coincida
+				arrayChatId1.map((element) => {
+	
+					arrayChatId2.map((element2) => {
+	
+						if (element === element2) return flag = true;
+	
+					})				 
+				})
+				
+	
+				//como el flag no se ha levantado puesto que no se ha encontrado un id_Chats común => creamos nuevo objeto dentro de Firebase
+				if (!flag) {
+					
+					//objeto que se meterá dentro de FireBase y contendrá toda la información del chat entre dos usuarios
+					let timeNow = Date.now();
+					let randomId = `${Math.floor(Math.random() * 1000000000000)}`;  // Número random de 12 cifras que hará de id único en FireBase
+					let newChat = {
+						createdDate : timeNow,
+						usersInside : [`${userId}`, `${userId2}` ],
+						lastActivity : timeNow,
+						messages : {
+						   
+						}
+					}
+	
+					 //Empujamos el nuevo objeto dentro de FireBase
+	
+					dataBase.ref(`idChats/${randomId}`).set(newChat);
+					
+					
+					
+					
+					
+					//NO HAS HENDLED SI HAY ERRORES EN ESTAS QUERIES //
+					//Actualizamos todas las tablas de SQL que tienen que ser actualizadas
+					connection.query(`INSERT INTO chats_users (id_chats, id_users) VALUES (?, ?);`, [randomId, userId], (err, result) => {
+						
+						if (err){
+							res.send({"res" : "0", "msg" : err})
+						}
+						connection.query(`INSERT INTO chats_users (id_chats, id_users) VALUES (?, ?);`, [randomId, userId2], (err, result ) => {
+	
+							if (err){
+								res.send({"res" : "0", "msg" : err})
+							}
+	
+							connection.query(`INSERT INTO chats (id, created_at, last_activity) VALUES (?, ?, ?);`, [randomId, timeNow, timeNow], (err, result) => {
+	
+								if (err){
+									res.send({"res" : "0", "msg" : err})
+								}
+	
+								connection.end();
+								
+							})
+						})
+					})
+					
+					
+	
+					
+	
+				} else {
+					connection.end();
+					res.send({"res": "0", "msg": "There's already a Chat created between these users"})
+				}
+	
+				
+				
+				
+			})}
+			
+		
+		})
+	} else {res.send({"res": "0", "msg": "No JWT"})}
+
+
+	
 	
 
 })

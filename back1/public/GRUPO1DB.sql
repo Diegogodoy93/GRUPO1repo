@@ -4,6 +4,7 @@ USE GRUPO1DB;
 
 
 --users: 
+--Posiblemente se quite la columna user_name <=
 
 CREATE TABLE IF NOT EXISTS users(
 `id` INT NOT NULL AUTO_INCREMENT,
@@ -14,7 +15,7 @@ CREATE TABLE IF NOT EXISTS users(
 `name` varchar (40),
 `family_name` varchar(40),
 `email` varchar (100) NULL,
-`apicultor` INT,
+`apicultor` INT DEFAULT 0,
 PRIMARY KEY(id, user_name)
 );
 

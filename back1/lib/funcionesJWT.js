@@ -24,7 +24,7 @@ function encodeBase64(string) {
 
 //Función decodificadora de base64
 function decodeBase64(base64String) {
-	const decodedString = base64.decoded(base64String);
+	const decodedString = base64.decode(base64String);
 	return decodedString;
 }
 
@@ -63,7 +63,8 @@ function verifyJWT(jwt) {
 }
 //Función para obtener la info contenida en el JWT 
 function getJWTInfo(jwt) {
-	const [payload] = jwt.split(".")[1];
+    
+    const payload = jwt.split(".")[1];
 	if (payload) {
 		try {
 			const data = JSON.parse(decodeBase64(payload));
