@@ -71,6 +71,10 @@ const options = {
 
 server.use(publicFiles);
 server.use(bodyParser.urlencoded({"extended":false}));
+server.use(cors({
+    origin:"http://localhost:3000", 
+    credentials:true,
+}));
 server.use(bodyParser.json());
 server.use(cors());
 server.use(express.static("./../public"));
@@ -98,95 +102,242 @@ const calcDistance = (lat1, lon1, lat2, lon2) => {
   
 }
 
-
+//END-POINTS DE PRUEBA
 ///////////////////////////////////////////////
 
+server.get("/prueba", (req, res) => {
 
+	connection.query(`SELECT * FROM users`, (err, result) => {
+		if (err) {
 
+			res.send({"res" : "0", "msg" : err});
+		
+		}
+
+		if(result){
+			res.send({"msg": result})
+			
+		} else {
+			res.send({"msg": "No ha habido ningún resultado", "respUndefined": result})
+			
+		}
+		connection.end();		
+	})
+})
 
 ///////////////////////ENDPOINTS///////////////////////
 
+server.post("/register", (req, res) => { /////FUNCIONA (Falta comprobar registro con Google/Facebook)  PERO Esto se puede refactorizar y optimizar/////
+	//Variables para la primera query a SQL
+	let sql;
+	let arrayVariables;
+	let firstVal; //=> Variable para comprobación de formato de contraseña e email.
+	if(req.body){
+		
+		
+		
+		//Apic será null si el usuario ha puesto que no es apicultor o será un objeto que contendrá tanto numRegGanadero como tipoOrg 
+		const {idGoogle, idFacebook, name, familyName, email, password, apic, tipoOrganizacion, codigoAsentamiento} = req.body;
+		
+		if(!email || !name || !familyName) {
+			return res.send({"res":"-2", "msg": "no required data"})
+		}
+		
+		//Tenemos que volver a comprobar si el objeto enviado desde front contiene datos válidos para nuestra web
+
+ 
+			if(apic){
+
+				if(tipoOrganizacion && codigoAsentamiento) {
+					
+					sql = `INSERT INTO users (created_at, name, family_name, Email, apicultor) VALUES (?,?,?,?,?);`;
+					arrayVariables = [new Date(),name, familyName, email, 1]
+				} else {
+					return res.send({"res":"-3", "msg": "no required data"})
+				}
 
 
-//CORRECCIÓN DEL REGISTER //
-/////// REGISTER END POINT/////////  (SE PUEDEN HACER AMBAS BÚSQUEDAS DENTRO DE LA BASE DE DATOS EN UNA QUERY)
-server.post("/register", (req, res) => {
+			} else {
 
-	let newUser = req.body;
+				sql = `INSERT INTO users (created_at, name, family_name, Email) VALUES (?,?,?,?);`
+				arrayVariables =[new Date(),name, familyName, email]
+			}		
+		
 
+		if(password && email) {
+			
+			firstVal = validateCredentials(password ,email ); //LO QUE ESTÁ PASANDO AQUÍ ES UNA PUTA LOCURA, SE SUPONE QUE EMAIL ENTRA PRIMERO COMO PARÁMETRO. EN CODEPEN SALE TRUE SOLO SI ES ASÍ. EN CAMBIO EN NODE SOLO SALE TRUE SI ENTRA PRIMERO EL PASSWORD. LO CUAL NO TIENE SENTIDO ALGUNO.
+			
+			
 
-	if (newUser.email && newUser.password && validateCredentials(newUser.Email, newUser.password)) {
-
-		connection.query(`SELECT * FROM users WHERE Email = ? OR user_name = ?;`,[newUser.email, newUser.userName], function (err, result) {
-
-			if (err) {
-
-				res.send({"res" : "0", "msg" : err});
-				
-
+			if (!firstVal) {
+				return res.send({"res1":"0", "msg": "Wrong format in firstVal"})
 			}
 
-			//tenemos que obtener en el formApic los siguientes datos: booleanApic: (si es positivo tenemos que meter el código de ganadero su tipo de org), family_name, tel.
-
-				if (!result.length) {
-
-				res.send({"res" : "2", "msg" : "User to formApic", newUser});
-			} 
-			else {res.send({"res" : "1", "msg" : "User or email already in DB"})};
-		})
+		}
+		connection.query(`SELECT * FROM users WHERE Email = ?;`,[email], function (err, result) {
 			
+			if(err) {
+				
+				return res.send({"res0" : "0", "msg" : err});
+			}
 
+			if(result.length) {
+				console.log("Estás aquí", result.length, result[0])
+				return res.send({"res-2" : "0", "msg" : "Email ya utilizado"});
+			}
+			
+			connection.query(sql, arrayVariables, (err, result) => {
+				
+				if(err) {
+					
+					return res.send({"res2" : "0", "msg" : err});
+				}
 	
+				
+	
+				let idUser = result.insertId;
+				
+	
+				if (apic) {
+	
+					
+					const sql = `INSERT INTO apicultores (id_users, codigo_asentamiento, tipo_org) VALUES (?,?,?)`
+	
+					connection.query(sql, [idUser, codigoAsentamiento, tipoOrganizacion], (err, result) => {
+						
+						if(err) {
+							
+							return	res.send({"res3" : "0", "msg" : err});
+						}
+						
+						
+					})
+	
+				}
+	
+				const Payload = {
+					"userId" : idUser,
+					"email" : email,
+					"name" : name,
+					"iat" : new Date()
+				};
+				//PUSH INFO PARA LOS USUARIOS DE REGISTRADOS DESDE NUESTRA APP
+				if (password) {
+	
+					const Validated = validateCredentials(password,email) // MIRAR ARRIBA CON LA PRIMERA CONPROBACIÓN PARA VER QUÉ PASA.
+					
+					if(Validated){
+	
+						let pswObject = JWT.encryptPassword(password);
+	
+						const sql = `INSERT INTO coolmenaUsers (id_users, passw, SALT) VALUES (?,?,?)`;
+	
+						
+						
+						
+						connection.query(sql, [idUser, pswObject.password, pswObject.salt], (err, result) => {
+	
+							if(err) {
+								return	res.send({"res4" : "0", "msg" : err});
+							}
+	
+							
+							connection.end();
+	
+							return res.cookie("jwt", JWT.generateJWT(Payload),{"httpOnly" : true}).send({"res": "2", "msg": `user signed up with coolmena users`});
+							
+	
+	
+						})
+	
+					} else {
+						
+						
+						return res.send({"res":"0", "msg": "Wrong format"})
+						
+						
+					}
+					//PUSH INFO PARA LOS DE GOOGLE
+				} else if (idGoogle) {
+	
+					const sql = `INSERT INTO googleUsers (id_users, id_google) VALUES (?,?)`
+					
+					connection.query(sql, [idUser, idGoogle], (err, result)=> {
+						
+						if(err) {
+							return	res.send({"res6" : "0", "msg" : err});
+						}
+	
+						 connection.end();
+	
+						return res.cookie("jwt", JWT.generateJWT(Payload),{"httpOnly" : true}).send({"res": "2", "msg": Payload});
+						
+					})
+					//PUSH INFO PARA LOS DE FACEBOOK 
+				} else if (idFacebook) {
+	
+					const sql = `INSERT INTO facebookUsers (id_users, id_facebook) VALUES (?,?)`
+					
+					connection.query(sql, [idUser, idFacebook], (err, result)=> {
 
-	} else	{
-		connection.end();
-		res.send({"res" : "0", "msg" : "Format error in credentials"});
-	}
+						
+						
+						if(err) {
+							return	res.send({"res7" : "0", "msg" : err});
+						}
+	
+						 connection.end();
+						return res.cookie("jwt", JWT.generateJWT(Payload),{"httpOnly" : true}).send({"res": "2", "msg": Payload});
+						
+					})
+				} else {
+					
+					return	res.send({"res" : "0", "msg" : "No data"})
+				}
+							
+			})
 
-
+		})	
+		
+	} else {
+		
+		res.send({"res" : "0", "msg": "No body"})
+	};
 });
 
-
-
-
 //////  LOGIN ENDPOINT ESTÁ CORREGIDO FALTA COMPROBACIÓN //////////
-
+//ESTÁ LA OPCIÓN DE ADMIN PARA ACCEDER <=====
 server.post("/login", (req, res) => {
-
 	
-	
-	
-	const {userName, password} = req.body; //VARIABLE QUE CONTIENE EL JSON LOS DATOS ENCRIPTADOS DEL FRONT.
+	const {email, password} = req.body; //VARIABLE QUE CONTIENE EL JSON LOS DATOS ENCRIPTADOS DEL FRONT.
 	
 
-		const Validated = validateCredentials(userName, password);
+		const Validated = validateCredentials(password, email);
     
 		//////////AQUÍ TENDRÍA QUE IR LA PARTE DE VERIFY PASSWORD O PODEMOS HACERLO CON BCRYPT => LINEA 123 DE https://github.com/TheBridge-FullStackDeveloper/ft-sep20-Backend-examples/blob/main/jwt/server.js////////////
-		if (userName && password && Validated){
+		if (email && password && Validated){
 
-		const sql = `SELECT * from users U INNER JOIN coolmenaUsers CU ON U.id = CU.id_users WHERE user_name =?;`
+		const sql = `SELECT * from users U INNER JOIN coolmenaUsers CU ON U.id = CU.id_users WHERE email =?;`
 		
-		connection.query(sql,[userName], function (err, result) {
-
+		connection.query(sql,[email], function (err, result) {
 			
-			
-			if (err) {
-
-				console.log(err);
-				return;
+			if(err) {
+				return	res.send({"res" : "0", "msg" : err});
 			}
 
 			let realPsw = {
 
-				password: result[0].password,
-				salt: result[0].salt 
+				password: result[0].passw,
+				salt: result[0].SALT 
 			}
 			
-			
+			connection.end();
+
+						
 			//Aquí se tiene que comparar el psw en DB con la contraseña salted que nos llega 
-			if (verifyPassword( password,realPsw)) { //El password que queremos comprobar es el queryResult.password
-				
-					
+			if (JWT.verifyPassword(password,realPsw)) { //El password que queremos comprobar es el queryResult.password
+									
 				const Payload = {
 
 					// "userName": userName,
@@ -194,151 +345,25 @@ server.post("/login", (req, res) => {
 					// "role": "User",
 					// "ip": req.connection.remoteAddress
 					"userId" : result[0].id,
-					"userName": userName,
 					"email" : email,
-					"name" : name,
+					"name" : result[0].name,
 					"iat" : new Date()
 				};
 
-				res.cookie("jwt", JWT.generateJWT(Payload),{"httpOnly" : true}).send({"res": "2", "msg": Payload}); 
+				return res.cookie("jwt", JWT.generateJWT(Payload),{"httpOnly" : true}).send({"res": "2", "msg": Payload}); 
 				
 				
 			}  else {
-				res.send({"res": "0", "msg": "Wrong user or password"});
+				return res.send({"res": "0", "msg": "Wrong user or password"});
 			}
 
-			connection.end();
+			
 		});
 	} else {res.send({"res" : "0", "msg": "Wrong format"});}
 
 
 });
 
-server.post("/formApic", (req, res) => {
-	//Variables para la primera query a SQL
-	const sql;
-	const arrayVariables;
-
-	if(req.body){
-		
-		//Apic será null si el usuario ha puesto que no es apicultor o será un objeto que contendrá tanto numRegGanadero como tipoOrg 
-		const {idGoogle, idFacebook, name, familyName, email, password, apic} = req.body;
-		//Para ahorrar recursos de la base de datos. Refactorizar
-		if(apic){
-			sql = `INSERT INTO users (created_at, name, family_name, Email, apicultor) VALUES (?,?,?,?,?);`;
-			arrayVariables = [new Date(),name, familyName, email, newUser.Email, 1]
-
-		} else {
-			sql = `INSERT INTO users (created_at, name, family_name, Email) VALUES (?,?,?,?);`
-			arrayVariables =[new Date(),name, familyName, email, newUser.Email]
-		}
-
-		//HAY QUE PONER DE DEFAULT NULL EN TODO LO QUE METEMOS EN USERS
-		
-
-		connection.query(sql, arrayVariables, (err, result) => {
-
-			const idUser = result.insertId;
-
-			if(err) {
-				res.send({"res" : "0", "msg" : err});
-			}
-
-			if (apic) {
-
-				
-				const sql = `INSERT INTO apicultores (id_users, num_reg_ganadero, tipo_org) VALUES (?,?,?)`
-
-				connection.query(sql, [idUser, apic.numRegistroGanadero, apic.tipoOrg], (err, result) => {
-					
-					if(err) {
-						res.send({"res" : "0", "msg" : err});
-					}
-					
-
-				})
-
-			}
-
-			const Payload = {
-				"userId" : idResultInsert,
-				"email" : email,
-				"name" : name,
-				"iat" : new Date()
-			};
-			//PUSH INFO PARA LOS USUARIOS DE REGISTRADOS DESDE NUESTRA APP
-			if (password) {
-
-				const Validated = validateCredentials(email, password)
-				if(Validated){
-
-					let pswObject = JWT.encryptPassword(password);
-
-					const sql = `INSERT INTO coolmenaUsers (id_users, passw, SALT) VALUES (?,?,?)`;
-
-					
-					
-					
-					connection.query(sql, [idResultInsert, pswObject.password, pswObject.salt], (err, result) => {
-
-						if(err) {
-							res.send({"res" : "0", "msg" : err});
-						}
-
-						
-						connection.end();
-
-						res.cookie("jwt", JWT.generateJWT(Payload),{"httpOnly" : true}).send({"res": "2", "msg": Payload});
-
-
-					})
-
-				} else {
-					res.send({"res":"0", "msg": "Wrong format"})
-				}
-				//PUSH INFO PARA LOS DE GOOGLE
-			} else if (idGoogle) {
-
-				const sql = `INSERT INTO googleUsers (id_users, id_google) VALUES (?,?)`
-				
-				connection.query(sql, [idResultInsert, idGoogle], (err, result)=> {
-					
-					if(err) {
-						res.send({"res" : "0", "msg" : err});
-					}
-
-					connection.end();
-
-					res.cookie("jwt", JWT.generateJWT(Payload),{"httpOnly" : true}).send({"res": "2", "msg": Payload});
-					
-				})
-				//PUSH INFO PARA LOS DE FACEBOOK 
-			} else if (idFacebook) {
-
-				const sql = `INSERT INTO facebookUsers (id_users, id_facebook) VALUES (?,?)`
-				
-				connection.query(sql, [idResultInsert, idFacebook], (err, result)=> {
-					
-					if(err) {
-						res.send({"res" : "0", "msg" : err});
-					}
-
-					connection.end();
-
-					res.cookie("jwt", JWT.generateJWT(Payload),{"httpOnly" : true}).send({"res": "2", "msg": Payload});
-					
-				})
-			} else {
-				res.send({"res" : "0", "msg" : "No data"})
-			}
-			
-			connection.end();
-		})
-		
-	} else res.send({"res" : "0", "msg": "No body"});
-	
-
-});
 
 
 
@@ -377,7 +402,7 @@ server.get("/facebook-login", async (req, res) => {
                     connection.query(sql, [email, id], (err, result) => {
 
                         if (err){
-                            res.send({"res" : "0", "msg" : err})
+                            return res.send({"res" : "0", "msg" : err})
                         } else if (result.length){
 
                                 //Generate JWT
@@ -402,14 +427,14 @@ server.get("/facebook-login", async (req, res) => {
                                 } else {
 
 									//posiblemente aquí queremos además borrar el jwt que tiene el front
-                                    res.send({"res" : "0", "msg" : "JWT not verified"})
+                                    return res.send({"res" : "0", "msg" : "JWT not verified"})
                                 }		
                                 
                             
                         } else {
 							//Aquí se tiene que mandar la respuesta que requiera front si necesitamos mas datos de los que nos da facebook
 							//mandamos además el objeto obtenido del oAuth para que se vuelva a mandar al end-point formApic
-                            res.send({"res" : "2", "msg" : "User facebook to fill formApic", data});
+                            return res.send({"res" : "2", "msg" : "User facebook to fill formApic", data});
 
                         }
                         connection.end();
@@ -420,7 +445,7 @@ server.get("/facebook-login", async (req, res) => {
 
         } else {
 
-            res.send({"res" : "0", "msg" : "Error in credentials"})
+            return res.send({"res" : "0", "msg" : "Error in credentials"})
         }
     } else {
         res.send({"res" : "0", "msg" : "Left credentials"})
@@ -463,7 +488,7 @@ server.get("/google-login", async (req, res) => {
                         DBconnection.query(sql, [email], (err, result) => {
 
                             if (err){
-                                res.send({"res" : "0", "msg" : err})
+                                return res.send({"res" : "0", "msg" : err})
                             } else if (result.length){
 
 
@@ -486,26 +511,26 @@ server.get("/google-login", async (req, res) => {
 
                                 } else {
 									//Aquí posiblemente borremos el JWT que tiene front 
-                                    res.send({"res" : "0", "msg" : "JWT not verified"})
+                                    return res.send({"res" : "0", "msg" : "JWT not verified"})
                                 }
                                     
                             } else {
 
 								//respuesta que damos a front para que mande al usuario al end-point del form completo.
-                                res.send({"res" : "2", "msg" : "User Google to fill form", userData})
+                                return res.send({"res" : "2", "msg" : "User Google to fill form", userData})
                             }
                             DBconnection.end();
                         });
                     })
                     .catch((e) => {
                         
-                        res.send({"res" : "0", "msg" : "Unable to connect to database", e});
+                        return res.send({"res" : "0", "msg" : "Unable to connect to database", e});
                     });
                 }
             }
 
         } else {
-            res.send({"res" : "0", "msg" : "No userData"});
+            return res.send({"res" : "0", "msg" : "No userData"});
         }
 
 	} else {
@@ -554,7 +579,7 @@ server.get("/products", (req, res) => {  //Puede que haya que cambiar este endpo
 		const userPosition = req.body.position; //Front mandará un objeto compuesto de lat y lon 
 			
 		if (err){
-			res.send({"res" : "0", "msg" : err})
+			return res.send({"res" : "0", "msg" : err})
 		}
 
 		if(userPosition){
@@ -573,7 +598,7 @@ server.get("/products", (req, res) => {  //Puede que haya que cambiar este endpo
 
 
 			connection.end();
-			res.send({"res": "2", "msg": {orderedProductList,unOrderedProductList}});
+			return res.send({"res": "2", "msg": {orderedProductList,unOrderedProductList}});
 		} else {
 				
 			connection.end();
@@ -593,7 +618,7 @@ server.get("/productsByUserId/:ID", (req, res) => {
 	connection.query(`SELECT * FROM products WHERE id_users = ?;`,[userID], (err, result) => {
 
 		if (err){
-			res.send({"res" : "0", "msg" : err})
+			return res.send({"res" : "0", "msg" : err})
 		}
 
 		connection.end();
@@ -614,7 +639,7 @@ server.get("/sellingPoints", (req, res) => {
 	connection.query(sql, (err, result) => {
 
 		if (err){
-			res.send({"res" : "0", "msg" : err})
+			return res.send({"res" : "0", "msg" : err})
 		}
 		if(userPosition){
 				
@@ -632,7 +657,7 @@ server.get("/sellingPoints", (req, res) => {
 
 
 			connection.end();
-			res.send({"res": "2", "msg": {orderedList,unOrderedList}});
+			return res.send({"res": "2", "msg": {orderedList,unOrderedList}});
 		} else {
 				
 			connection.end();
@@ -711,11 +736,11 @@ server.get("/usersApicInfoByID/:ID", (req, res) => {
 	connection.query(`SELECT users.user_name, products.id, products.product_name, products.product_type, products.picture, products.rating, selling_points.location FROM users JOIN apicultores ON users.id = apicultores.id_users JOIN products ON apicultores.id_apicultor = products.id_apicultor JOIN selling_points ON selling_points.id_apicultor = apicultores.id_apicultor WHERE users.id = ?`,[query], (err, result) => {
 
 		if (err){
-			res.send({"res" : "0", "msg" : err})
+			return res.send({"res" : "0", "msg" : err})
 		}
 
 		connection.end();
-		res.send({"res": "1", "msg" :result});
+		return res.send({"res": "1", "msg" :result});
 
 	})
 })
@@ -728,18 +753,18 @@ server.get("/productsFav", (req, res) => {
 
 	const { usrid } = JWT.getJWTInfo(req.cookies.JWT)
 
-	if(usrid){
+	if(usrid && JWT.verifyJWT(req.cookies.JWT)){
 		
 		
 
 		connection.query(`SELECT * FROM users_products_fav WHERE id_users = ?;`, [usrid], (err, result) => {
 
 			if (err){
-				res.send({"res" : "0", "msg" : err})
+				return res.send({"res" : "0", "msg" : err})
 			}
 
 			connection.end();
-			res.send({"res" : "1", "msg": result});
+			return res.send({"res" : "1", "msg": result});
 	
 		})
 	} else {res.send({"res": "0", "msg": "No JWT"})}
@@ -757,7 +782,7 @@ server.get("/getUserId/:userName", (req, res) => {
 	connection.query(`SELECT id from users WHERE user_name =?;`, [userName], (err, result) => {
 		
 		if (err){
-			res.send({"res" : "0", "msg" : err})
+			return res.send({"res" : "0", "msg" : err})
 		}
 		
 		connection.end();
@@ -779,7 +804,7 @@ server.get("/getChat/:userId2", (req, res) => {
 		connection.query(`SELECT id_chats from chats_users WHERE id_users = ? OR id_users = ?;`, [userId, userId2], (err, result) => {
 		
 			if (err){
-				res.send({"res" : "0", "msg" : err})
+				return res.send({"res" : "0", "msg" : err})
 			}
 
 
@@ -796,7 +821,7 @@ server.get("/getChat/:userId2", (req, res) => {
 					const messages = content.messages;
 			
 					connection.end();
-					res.send({"res": "1", "msg" : messages});
+					return res.send({"res": "1", "msg" : messages});
 
 				})
 
@@ -841,7 +866,7 @@ server.post("/newChatMessage", (req, res) => {
 		connection.query(`INSERT INTO chats (id, created_at) VALUES (?, ?);`, [idChat, timeNow], (err, result) => {
 
 			if (err){
-				res.send({"res" : "0", "msg" : err})
+				return res.send({"res" : "0", "msg" : err})
 			}
 
 			connection.end()
@@ -865,7 +890,7 @@ server.post("/newChat", (req, res) => {
 		connection.query("SELECT * FROM chats_users WHERE id_user = ?;", [userId], (err, result1) => {
 			
 			if (err){
-				res.send({"res" : "0", "msg" : err})
+				return res.send({"res" : "0", "msg" : err})
 			}
 	
 			//Flag que se activa si se encuentra una coincidencia de id_chats entre dos usuarios
@@ -880,7 +905,7 @@ server.post("/newChat", (req, res) => {
 				connection.query("SELECT * FROM chats_users WHERE id_user = ?;", [userId2], (err, result2) => {
 	
 					if (err){
-						res.send({"res" : "0", "msg" : err})
+						return res.send({"res" : "0", "msg" : err})
 					}
 	
 				
@@ -926,18 +951,18 @@ server.post("/newChat", (req, res) => {
 					connection.query(`INSERT INTO chats_users (id_chats, id_users) VALUES (?, ?);`, [randomId, userId], (err, result) => {
 						
 						if (err){
-							res.send({"res" : "0", "msg" : err})
+							return res.send({"res" : "0", "msg" : err})
 						}
 						connection.query(`INSERT INTO chats_users (id_chats, id_users) VALUES (?, ?);`, [randomId, userId2], (err, result ) => {
 	
 							if (err){
-								res.send({"res" : "0", "msg" : err})
+								return res.send({"res" : "0", "msg" : err})
 							}
 	
 							connection.query(`INSERT INTO chats (id, created_at, last_activity) VALUES (?, ?, ?);`, [randomId, timeNow, timeNow], (err, result) => {
 	
 								if (err){
-									res.send({"res" : "0", "msg" : err})
+									return res.send({"res" : "0", "msg" : err})
 								}
 	
 								connection.end();
@@ -952,7 +977,7 @@ server.post("/newChat", (req, res) => {
 	
 				} else {
 					connection.end();
-					res.send({"res": "0", "msg": "There's already a Chat created between these users"})
+					return res.send({"res": "0", "msg": "There's already a Chat created between these users"})
 				}
 	
 				
@@ -977,3 +1002,9 @@ server.post("/newChat", (req, res) => {
 server.listen(listenPort, () => {
 	console.log(`http://localhost:5678/ server listening on port ${listenPort}`);
 });
+
+
+
+
+
+

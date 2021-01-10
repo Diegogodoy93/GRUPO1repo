@@ -6,9 +6,7 @@ function validateEmail(strEmail) {
 }
 //Regex password
 function validatePsw(strPsw) {
-    console.log(strPsw)
-    let pswRegex = /^(?=.*[0-9]+.*)(?=.*[a-zA-Z]+.*)[0-9a-zA-Z]{6,}$/;
-    console.log("pass", pswRegex.test(strPsw));
+    let pswRegex = /^(?=.*[0-9]+.*)(?=.*[a-zA-Z]+.*)[0-9a-zA-Z]{6,}$/;   //Contraseña que debe tenemos una longitud mínima de 5 caracteres y debe contener al menos un número
     return pswRegex.test(strPsw);
 }
 //Funcion de validación de Email && Password 
