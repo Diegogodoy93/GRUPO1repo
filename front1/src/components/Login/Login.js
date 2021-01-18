@@ -38,13 +38,17 @@ export class Login extends Component {
                     <StyledLogo>
                         <img src= {welcomeLogo} alt="Coolmena logo"/>
                     </StyledLogo>
-                    <StyledForm onSubmit={this.submitHandler}>
+                    <StyledForm >
                         <TextInputBox img ="email" type="email" placeholder="Email" value={email} callbackHandler={this.changeHandler} name="email"/>
                         <TextInputBox img ="password" type="password" placeholder="Contraseña" value={password} callbackHandler={this.changeHandler} name="password"/>
                         <FbGgLogin/>
-                        <button type="submit"><img src={Siguiente} alt="Siguiente"/></button>
+                        
                     </StyledForm>
                 </StyledDiv>
+                <StyledBottomDiv>
+                <button onClick={this.submitHandler}><img src={Siguiente} alt="Siguiente"/></button>
+                <h5>No tengo cuenta, registrarme</h5>
+                </StyledBottomDiv>
             </Container>
         )
     }
@@ -56,6 +60,9 @@ bottom:0;
 right:0;
 left:0;
 position:absolute;
+display: flex;
+flex-direction: column;
+text-align: center
 
 `;
 
@@ -66,7 +73,7 @@ background-position: center;
 background-size: cover;
 background-repeat: no-repeat;
 width: 100%;
-height: 85%;
+height: 87%;
 display: flex;
 justify-content: space-around;
 flex-direction: column;
@@ -84,13 +91,23 @@ margin: 0;
 
 `;
 
-const StyledForm = styled.form`
+const StyledForm = styled.div`
 display: flex;
 flex-direction: column;
 align-items: center;
+height: 250px;
 
+`;
 
-
-
+const StyledBottomDiv = styled.div`
+display: flex;
+flex-direction: column;
+justify-content: center;
+button {
+    border: none;
+    background: #FFFFFF;
+    
+}
+*:focus {outline:none}
 `;
 export default Login

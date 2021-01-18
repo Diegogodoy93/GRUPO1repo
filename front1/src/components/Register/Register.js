@@ -14,6 +14,9 @@ import imgApicSel from '../../assets/Button_ApicultorSel.png'
 import rectangle from '../../assets/rectangle.png'
 import passwordImg from '../../assets/password.png';
 
+
+
+
 export class Register extends Component {
     
 
@@ -27,21 +30,28 @@ export class Register extends Component {
         codigoAsentamiento:"",
         tipoOrganizacion:""
     }
-
+    
     googleHandler = () => {
-        fetch("http://localhost:5678/google-redirect").then((data) => data.text()).then((data) => console.log(data))
+        const myClient = '963273471821-ve30declh0mkk8j7seedcqpclv8mmobl.apps.googleusercontent.com'
+        
+        fetch("http://localhost:5678/google-redirect", {"Access-Control-Allow-Origin": "*",
+        
+        'Content-Type': 'application/json', credentials: "include"
+    
+    
+    }).then((data) => data.text()).then((data) => console.log(data))
 
-        console.log("clicked!")
+        // Fetch("http://localhost:5678/google-redirect", {method : "get", modes: "no-cors", credentials: "omit", referrerPolicies: "Access-Control-Allow-Origin"}).then((data) => {console.log(data)})
+
+
+
     }
 
     selectHandler = (e) => {
         
         const selected = e.target.value
         
-        this.setState({tipoOrganizacion: selected})
-        
-        
-        
+        this.setState({tipoOrganizacion: selected})       
         
     }
     changeHandler =(e) => {
@@ -126,7 +136,7 @@ export class Register extends Component {
                         <TextInputBox img ="codigoAsentamiento" type="text" placeholder="Código de asentamiento" value={codigoAsentamiento} callbackHandler={this.changeHandler} name="codigoAsentamiento"/>
                         <StyledSelect  value={this.state.tipoOrganizacion} onChange={this.selectHandler}>
                             {/* <img src={passwordImg} alt="Tipo de organización"/> */}
-                            <option value="" selected>"Tipo de organización"</option> 
+                            <option value="" selected disabled hidden>"Tipo de organización"</option> 
                             <option value="autonomo">Autónomo</option>
                             <option value="cooperativa">Cooperativa</option>
                             <option value="otros">Otros</option>

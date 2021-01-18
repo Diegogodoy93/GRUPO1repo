@@ -12,7 +12,7 @@ const oauth2Client = new google.auth.OAuth2(
    * This is where Google will redirect the user after they
    * give permission to your application
    */
-	"http://localhost:5678/google-login"
+	"http://localhost:5678/register"
 );
 
 function getGoogleAuthURL() {

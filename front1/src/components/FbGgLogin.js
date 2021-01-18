@@ -9,8 +9,8 @@ export class FbGgLogin extends Component {
    render() {
         return (
             <StyledDiv>
-                <img src={fbLogo} onClick={this.props.googleHandler} alt="Registro con Facebook"/>
-                <img src={ggLogo} alt="Registro con Google"/>
+                <img src={fbLogo}  alt="Registro con Facebook"/>
+                <img src={ggLogo} onClick={this.props.googleOAuth} alt="Registro con Google"/>
                 
             </StyledDiv>
         )
@@ -26,8 +26,8 @@ display: flex;
 
 justify-content: center;
 img{
-    height: 24px;
-    width: 24px;
+    height: 40px;
+    width: 40px;
     margin: 5px;
 }
 

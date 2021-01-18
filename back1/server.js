@@ -5,6 +5,11 @@ const sqlFn = require("./lib/funcionesSql.js")
 const JWT = require("./lib/funcionesJWT.js");
 const Google = require("./lib/oAuthGoogle");
 const validateCredentials = require("./lib/funcionesValidacion.js");
+
+
+
+const GooglePlusTokenStrategy = require('passport-google-plus-token'); //=> Esto irá dentro de otro fichero
+const router = require("express-promise-router")();	
 // const validateEmail = require("./lib/funcionesValidacion.js");
 // const validatePsw = require("./lib/funcionesValidacion.js")
 
@@ -76,7 +81,6 @@ server.use(cors({
     credentials:true,
 }));
 server.use(bodyParser.json());
-server.use(cors());
 server.use(express.static("./../public"));
 
 ////FUNCIONES MAPA//////
@@ -103,29 +107,20 @@ const calcDistance = (lat1, lon1, lat2, lon2) => {
 }
 
 //END-POINTS DE PRUEBA
+
 ///////////////////////////////////////////////
 
 server.get("/prueba", (req, res) => {
 
-	connection.query(`SELECT * FROM users`, (err, result) => {
-		if (err) {
+	
 
-			res.send({"res" : "0", "msg" : err});
-		
-		}
-
-		if(result){
-			res.send({"msg": result})
-			
-		} else {
-			res.send({"msg": "No ha habido ningún resultado", "respUndefined": result})
-			
-		}
-		connection.end();		
-	})
 })
 
-///////////////////////ENDPOINTS///////////////////////
+
+
+
+
+
 
 server.post("/register", (req, res) => { /////FUNCIONA (Falta comprobar registro con Google/Facebook)  PERO Esto se puede refactorizar y optimizar/////
 	//Variables para la primera query a SQL
@@ -260,6 +255,8 @@ server.post("/register", (req, res) => { /////FUNCIONA (Falta comprobar registro
 					}
 					//PUSH INFO PARA LOS DE GOOGLE
 				} else if (idGoogle) {
+
+
 	
 					const sql = `INSERT INTO googleUsers (id_users, id_google) VALUES (?,?)`
 					
@@ -325,19 +322,19 @@ server.post("/login", (req, res) => {
 			if(err) {
 				return	res.send({"res" : "0", "msg" : err});
 			}
-
+			// connection.end(); <======== 
 			let realPsw = {
 
 				password: result[0].passw,
 				salt: result[0].SALT 
 			}
 			
-			connection.end();
-
-						
+			
+			
+			
 			//Aquí se tiene que comparar el psw en DB con la contraseña salted que nos llega 
 			if (JWT.verifyPassword(password,realPsw)) { //El password que queremos comprobar es el queryResult.password
-									
+				
 				const Payload = {
 
 					// "userName": userName,
@@ -349,14 +346,17 @@ server.post("/login", (req, res) => {
 					"name" : result[0].name,
 					"iat" : new Date()
 				};
-
+				
 				return res.cookie("jwt", JWT.generateJWT(Payload),{"httpOnly" : true}).send({"res": "2", "msg": Payload}); 
 				
 				
 			}  else {
+				
 				return res.send({"res": "0", "msg": "Wrong user or password"});
 			}
-
+			
+			
+			
 			
 		});
 	} else {res.send({"res" : "0", "msg": "Wrong format"});}
@@ -506,8 +506,10 @@ server.get("/google-login", async (req, res) => {
                                 if(jwtVerified){
 
                                     
-                                    res.cookie("JWT", jwt, {"httpOnly" : true})
-                                        .send({"res" : "1", "msg" : `${result[0].name} has been found in DB and logged in with google`});
+									res.cookie("JWT", jwt, {"httpOnly" : true})
+										//{"res" : "1", "msg" : `${result[0].name} has been found in DB and logged in with google`}
+										//TENEMOS QUE METER EL END-POINT DE HOME O  A DONDE QUERAMOS IR. 
+										.redirect('http://localhost:3000/------------------');
 
                                 } else {
 									//Aquí posiblemente borremos el JWT que tiene front 
@@ -572,15 +574,16 @@ server.get("/products", (req, res) => {  //Puede que haya que cambiar este endpo
 	
 
 
-		connection.query(`SELECT * FROM products;`, function (err, result) {
+	try {connection.query(`SELECT * FROM products;`,  (err, result) =>  {
 
 		const orderedProductList = [];
 		const unOrderedProductList = result;
-		const userPosition = req.body.position; //Front mandará un objeto compuesto de lat y lon 
+		const userPosition = req.body; //Front mandará un objeto compuesto de lat y lon 
 			
 		if (err){
 			return res.send({"res" : "0", "msg" : err})
 		}
+		
 
 		if(userPosition){
 				
@@ -590,7 +593,7 @@ server.get("/products", (req, res) => {  //Puede que haya que cambiar este endpo
 				let productLat = formatedCoord[0] * 1;
 				let productLon = formatedCoord[1] * 1;
 	
-				if (calcDistance(userPosition.lat, userPosition.lon, productLat, productLon) <= 10000) {
+				if (calcDistance(userPosition.lat, userPosition.lng, productLat, productLon) <= 100000) {
 					
 					orderedProductList.push(elemento);
 				}	
@@ -604,7 +607,9 @@ server.get("/products", (req, res) => {  //Puede que haya que cambiar este endpo
 			connection.end();
 			res.send({"res": "1", "msg": unOrderedProductList})
 		}
-	})
+	})} catch {
+		return res.send({"res": "-2", "msg": "CATCH"})
+	}
 
 	 	
 })
@@ -629,38 +634,41 @@ server.get("/productsByUserId/:ID", (req, res) => {
 
 
 /////////OBTENCIÓN DE PUNTOS DE VENTA PARA POSTERIOR ORDENACIÓN  LINEA VERDE Y NARANJA (CENTRO)  ////////////////
-server.get("/sellingPoints", (req, res) => {
+server.post("/sellingPoints", (req, res) => {
 	
-	const orderedList = [];
-	const unOrderedList = result;
-	const userPosition = req.body.position; //Front enviará un objeto con las llaves lat y lon (como en el endpoint de arriba)
-	const sql = `SELECT * FROM products_selling_points;`
+	let orderedList = [];
+	let unOrderedList;
+	const userPosition = req.body //Front enviará un objeto con las llaves lat y lng (como en el endpoint de arriba)
+	const sql = `SELECT * FROM users_selling_points;`
 	
 	connection.query(sql, (err, result) => {
-
+		
 		if (err){
 			return res.send({"res" : "0", "msg" : err})
 		}
+			
 		if(userPosition){
-				
+
+			unOrderedList = result;	
 			result.map((elemento) => {
 
 				let formatedCoord = elemento.long_lat.split(",");
 				let Lat = formatedCoord[0] * 1;
 				let Lon = formatedCoord[1] * 1;
 	
-				if (calcDistance(userPosition.lat, userPosition.lon, Lat, Lon) <= 10000) {
+				if (calcDistance(userPosition.lat * 1, userPosition.lng * 1, Lat, Lon) <= 10000) {
 					
-					orderedProductList.push(elemento);
+					orderedList.push(elemento);
+					
 				}	
 			})
 
 
-			connection.end();
+			
 			return res.send({"res": "2", "msg": {orderedList,unOrderedList}});
 		} else {
 				
-			connection.end();
+			
 			res.send({"res": "1", "msg": unOrderedList})
 		}
 
@@ -988,12 +996,36 @@ server.post("/newChat", (req, res) => {
 		
 		})
 	} else {res.send({"res": "0", "msg": "No JWT"})}
+})
+//Para obtener datos del propie user que está haciendo la petición. Se envían a front los resultados tal cual llegan desde SQL.
+//Esto tiene que cambiar de end-point
+server.get('/get', (req, res) => {
+	if (req.cookies.JWT){
 
-
+		const {userId} = JWT.getJWTInfo(req.cookies.JWT);
+		if(JWT.verifyJWT(req.cookies.JWT)) {
+			
+			connection.query(`SELECT FROM users (name, family_name, birthday, tel, email) WHERE id = ?;`, userId, (err, result ) => {
+	
+				if (err){
+					return res.send({"res" : "0", "msg" : err})
+				}	
+				if (result.length){
 	
 	
+					return res.send({"res" : "0", "msg" : err})
+	
+				} else return res.send({"res" : "0", "msg" : err})	
+			})
+		} else return res.send({"res": "0", "msg": "Not verified JWT. Sign in"})
+		
+	} else return res.send({"res": "0", "msg": "No JWT"})
 
 })
+
+
+
+
 
 //////////////////QUERY QUE TENEMOS QUE PROBAR PARA OPTIMIZAR/////////////////////
 //SELECT id_chats FROM chats_users WHERE id_users = ${idUser2} AND id_chats IN(SELECT id_chats FROM chats_users WHERE id_users == ${idUser1})
